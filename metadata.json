@@ -1,0 +1,14 @@
+{
+  "name": "scalecommerce-sc_monit",
+  "version": "0.1.1",
+  "author": "Adrian Kirchner ScaleCommerce GmbH",
+  "summary": "ScaleCommerce Wrapper Module for sbitio-monit. Manages Supervisord.",
+  "license": "Apache 2.0",
+  "source": "https://github.com/ScaleCommerce/puppet-sc_monit.git",
+  "project_page": "https://github.com/ScaleCommerce/puppet-sc_monit",
+  "issues_url": "https://github.com/ScaleCommerce/puppet-sc_monit/issues",
+  "dependencies": [
+    { "name":"puppetlabs-stdlib","version_requirement":">= 1.0.0" }
+  ]
+}
+
