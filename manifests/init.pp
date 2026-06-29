@@ -1,24 +1,25 @@
 # == Class: sc_monit
 #
-# ScaleCommerce Wrapper Module for sbitio-monit.
-# Manages Supervisord.
+# ScaleCommerce Wrapper Module for sbitio-monit. Supervises monit via whichever
+# process manager runs on the node (supervisord or zpinit).
+#
+# monit is declared as a `supervisord::program`, which self-dispatches: on a
+# supervisord node it writes a supervisord program conf; on a zpinit node
+# (sc::service_manager: zpinit) it writes a zpinit::service TOML instead. The
+# `/etc/init.d/monit` shim points at sc_supervisor's backend-aware init wrapper,
+# which drives supervisorctl or zpctl accordingly. So the same declaration works
+# on both backends and a node migrates without touching this module.
 #
 # === Variables
 #
-# [*supervisor_init_script*]
-#  full path to supervisor init wrapper script
-#
-# [*supervisor_conf_script*
-#  full path to supervisor conf script
-#
 # [*supervisor_exec_path*]
-#  path to supervisor executable
+#  Deprecated/unused. Kept for backwards compatibility with existing data; the
+#  program reload is now handled by supervisord::program (and, on zpinit, by the
+#  init wrapper's first-load update).
 #
 # [*use_supervisor*]
-#  can be true or false, default is true.
-#  determines if monit is managed via supervisord. Set false on nodes that do
-#  not use supervisord (e.g. zpinit) to skip the supervisord wiring (and the
-#  unconditional inclusion of the supervisord daemon).
+#  true (default) supervises monit via the process manager. Set false to leave
+#  monit's process supervision entirely unmanaged by this module.
 #
 # === Authors
 #
@@ -39,24 +40,35 @@ class sc_monit (
   if $use_supervisor {
     include sc_supervisor
 
-    # supervisor
+    # /etc/init.d/monit -> the backend-aware init wrapper, which drives
+    # supervisorctl or zpctl depending on which supervisor is PID 1.
     file { '/etc/init.d/monit':
       ensure => link,
       target => "${sc_supervisor::init_path}/supervisor-init-wrapper",
     }
 
-    file { "${supervisord::config_include}/monit.conf":
-      owner   => 'root',
-      group   => 'root',
-      mode    => '0644',
-      content => template("${module_name}/monit.supervisor.conf.erb"),
-      notify  => Class[supervisord::reload],
+    # Declare monit as a supervised program. supervisord::program
+    # self-dispatches on sc::service_manager: a supervisord program conf on
+    # supervisord nodes, a zpinit::service TOML on zpinit nodes. Either way monit
+    # becomes known to the backend so the init wrapper can start it.
+    supervisord::program { 'monit':
+      command     => '/usr/bin/monit -I -c /etc/monit/monitrc',
+      autostart   => true,
+      autorestart => true,
     }
 
-    exec {'supervisorctl_monit_update':
-      command     => "${supervisor_exec_path}/supervisorctl update",
-      refreshonly => true,
+    # Remove the legacy raw program conf this module used to write directly;
+    # supervisord::program now owns monit's program file (program_monit.conf).
+    # A no-op on zpinit nodes (the file never existed there).
+    file { "${supervisord::config_include}/monit.conf":
+      ensure => absent,
     }
+
+    # The program conf / TOML and the init shim must exist before Puppet starts
+    # Service[monit] (declared by the monit module), or the first start hits an
+    # unknown service.
+    Supervisord::Program['monit'] -> Service['monit']
+    File['/etc/init.d/monit']     -> Service['monit']
   }
 
 }
